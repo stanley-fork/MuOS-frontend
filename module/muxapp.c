@@ -158,43 +158,43 @@ static void create_app_items(void) {
         if (!app_paths[ap] || app_paths[ap][0] == '\0') continue;
 
         char apps_base[MAX_BUFFER_SIZE];
-        if (!ap) {
-            snprintf(apps_base, sizeof(apps_base), "%s",
-                     app_paths[ap]);
+        if (ap == 0) {
+            snprintf(apps_base, sizeof(apps_base), "%s", app_paths[ap]);
         } else {
-            snprintf(apps_base, sizeof(apps_base), "%s/%s",
-                     app_paths[ap], MUOS_APPS_PATH);
+            snprintf(apps_base, sizeof(apps_base), "%s/%s", app_paths[ap], MUOS_APPS_PATH);
         }
 
         DIR *app_dir = opendir(apps_base);
         if (!app_dir) continue;
 
         while ((entry = readdir(app_dir))) {
-            if (entry->d_type != DT_DIR) continue;
+            if (entry->d_type != DT_DIR && entry->d_type != DT_UNKNOWN) continue;
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
 
             char launch_script[MAX_BUFFER_SIZE];
-            snprintf(launch_script, sizeof(launch_script), "%s/%s/" APP_LAUNCHER,
-                     apps_base, entry->d_name);
+            snprintf(launch_script, sizeof(launch_script), "%s/%s/" APP_LAUNCHER, apps_base, entry->d_name);
 
-            if (access(launch_script, F_OK) == 0) {
-                if (append_mux_app(&dir_names, &dir_count, entry->d_name) < 0) {
-                    LOG_ERROR(mux_module, "%s", lang.SYSTEM.FAIL_ALLOCATE_MEM);
-                    closedir(app_dir);
-                    goto clean_up;
-                }
+            if (access(launch_script, F_OK) != 0) continue;
+
+            if (append_mux_app(&dir_names, &dir_count, entry->d_name) < 0) {
+                LOG_ERROR(mux_module, "%s", lang.SYSTEM.FAIL_ALLOCATE_MEM);
+                closedir(app_dir);
+                goto clean_up;
             }
         }
+
         closedir(app_dir);
     }
 
     for (size_t i = 0; i < A_SIZE(app); i++) {
         if (append_mux_app(&dir_names, &dir_count, app[i].name) < 0) {
             LOG_ERROR(mux_module, "%s", lang.SYSTEM.FAIL_ALLOCATE_MEM);
+            goto clean_up;
         }
     }
 
     if (!dir_names) return;
+
     qsort(dir_names, dir_count, sizeof(char *), str_compare);
 
     reset_ui_groups();
@@ -209,93 +209,114 @@ static void create_app_items(void) {
         snprintf(app_folder, sizeof(app_folder), "%s/%s", resolved_base, dir_names[i]);
 
         char app_launcher[MAX_BUFFER_SIZE];
-        snprintf(app_launcher, sizeof(app_launcher), "%s/%s/" APP_LAUNCHER,
-                 resolved_base, dir_names[i]);
+        snprintf(app_launcher, sizeof(app_launcher), "%s/%s/" APP_LAUNCHER, resolved_base, dir_names[i]);
 
         mux_apps *mux_app = get_mux_app(dir_names[i]);
 
+        char default_full_name[MAX_BUFFER_SIZE];
+        char default_grid_name[MAX_BUFFER_SIZE];
+
         char full_app_name[MAX_BUFFER_SIZE];
         char grid_app_name[MAX_BUFFER_SIZE];
+
+        snprintf(default_full_name, sizeof(default_full_name), "%s", TRS(dir_names[i]));
+
         if (mux_app && mux_app->grid) {
-            snprintf(full_app_name, sizeof(full_app_name), "%s", TRS(dir_names[i]));
-            snprintf(grid_app_name, sizeof(grid_app_name), "%s", TRS(mux_app->grid));
+            snprintf(default_grid_name, sizeof(default_grid_name), "%s", TRS(mux_app->grid));
         } else {
-            char app_lang_file[FILENAME_MAX];
-            snprintf(app_lang_file, sizeof(app_lang_file), "%s/%s/" APP_LANGUAGE,
-                     resolved_base, dir_names[i]);
+            snprintf(default_grid_name, sizeof(default_grid_name), "%s", TRS(dir_names[i]));
+        }
 
-            if (file_exist(app_lang_file)) {
-                LOG_SUCCESS(mux_module, "Loading Application Translation: %s", app_lang_file);
+        snprintf(full_app_name, sizeof(full_app_name), "%s", default_full_name);
+        snprintf(grid_app_name, sizeof(grid_app_name), "%s", default_grid_name);
 
-                mini_t *app_lang = mini_load(app_lang_file);
+        char app_lang_file[MAX_BUFFER_SIZE];
+        snprintf(app_lang_file, sizeof(app_lang_file), "%s/%s/" APP_LANGUAGE, resolved_base, dir_names[i]);
+
+        if (file_exist(app_lang_file)) {
+            LOG_SUCCESS(mux_module, "Loading Application Translation: %s", app_lang_file);
+
+            mini_t *app_lang = mini_load(app_lang_file);
+            if (app_lang) {
                 snprintf(full_app_name, sizeof(full_app_name), "%s",
-                         get_ini_string(app_lang, "full", config.SETTINGS.GENERAL.LANGUAGE, TRS(dir_names[i])));
+                         get_ini_string(app_lang, "full", config.SETTINGS.GENERAL.LANGUAGE, default_full_name));
+
                 snprintf(grid_app_name, sizeof(grid_app_name), "%s",
-                         get_ini_string(app_lang, "grid", config.SETTINGS.GENERAL.LANGUAGE, TRS(dir_names[i])));
+                         get_ini_string(app_lang, "grid", config.SETTINGS.GENERAL.LANGUAGE, default_grid_name));
 
                 mini_free(app_lang);
             } else {
-                LOG_WARN(mux_module, "No Application Translation Found: %s", app_lang_file);
-                snprintf(full_app_name, sizeof(full_app_name), "%s", TRS(dir_names[i]));
-                char *from_script = get_script_value(app_launcher, "GRID", dir_names[i]);
-                snprintf(grid_app_name, sizeof(grid_app_name), "%s", from_script ? from_script : dir_names[i]);
+                LOG_WARN(mux_module, "Failed Loading Application Translation: %s", app_lang_file);
             }
+        } else {
+            LOG_WARN(mux_module, "No Application Translation Found: %s", app_lang_file);
         }
 
-        const char *glyph_name = NULL;
+        if (file_exist(app_launcher)) {
+            char *from_script = get_script_value(app_launcher, "GRID", "");
+            if (from_script && from_script[0] != '\0') snprintf(grid_app_name, sizeof(grid_app_name), "%s", from_script);
+        }
+
+        const char *glyph_name = "app";
         if (mux_app && mux_app->icon) {
             glyph_name = mux_app->icon;
-        } else {
-            char app_launcher_icon[MAX_BUFFER_SIZE];
-            snprintf(app_launcher_icon, sizeof(app_launcher_icon), "%s/" APP_LAUNCHER, app_folder);
-            glyph_name = get_script_value(app_launcher_icon, "ICON", "app");
+        } else if (file_exist(app_launcher)) {
+            glyph_name = get_script_value(app_launcher, "ICON", "app");
         }
 
-        content_item *new_item = add_item(&items, &item_count, full_app_name,
-                                          (theme.GRID.ENABLED) ? grid_app_name : full_app_name, app_folder, ITEM);
-        new_item->glyph_icon = strdup(glyph_name);
+        content_item *new_item = add_item(&items, &item_count, full_app_name, theme.GRID.ENABLED ? grid_app_name : full_app_name, app_folder, ITEM);
+
+        if (new_item) {
+            new_item->glyph_icon = strdup(glyph_name ? glyph_name : "app");
+            if (!new_item->glyph_icon) LOG_ERROR(mux_module, "%s", lang.SYSTEM.FAIL_ALLOCATE_MEM);
+        }
 
         free(dir_names[i]);
+        dir_names[i] = NULL;
     }
 
     clean_up:
-    free(dir_names);
+    if (dir_names) {
+        for (size_t i = 0; i < dir_count; i++) {
+            free(dir_names[i]);
+        }
+
+        free(dir_names);
+    }
 
     if (theme.GRID.ENABLED && item_count > 0) {
         init_navigation_group_grid();
         ui_count += (int) item_count;
     } else {
-        for (int i = 0; i < item_count; i++) {
+        for (size_t i = 0; i < item_count; i++) {
             lv_obj_t *ui_pnlApp = lv_obj_create(ui_pnlContent);
-            if (ui_pnlApp) {
-                apply_theme_list_panel(ui_pnlApp);
+            if (!ui_pnlApp) continue;
 
-                lv_obj_t *ui_lblAppItem = lv_label_create(ui_pnlApp);
-                if (ui_lblAppItem) apply_theme_list_item(&theme, ui_lblAppItem, items[i].display_name);
+            apply_theme_list_panel(ui_pnlApp);
 
-                lv_obj_t *ui_lblAppItemGlyph = lv_img_create(ui_pnlApp);
-                if (ui_lblAppItemGlyph) {
-                    apply_theme_list_glyph(&theme, ui_lblAppItemGlyph, mux_module, items[i].glyph_icon);
-                    if (lv_img_get_src(ui_lblAppItemGlyph) == NULL) {
-                        apply_app_glyph(items[i].extra_data, items[i].glyph_icon, ui_lblAppItemGlyph);
-                    }
-                }
-
+            lv_obj_t *ui_lblAppItem = lv_label_create(ui_pnlApp);
+            if (ui_lblAppItem) {
+                apply_theme_list_item(&theme, ui_lblAppItem, items[i].display_name);
                 lv_group_add_obj(ui_group, ui_lblAppItem);
-                lv_group_add_obj(ui_group_glyph, ui_lblAppItemGlyph);
-                lv_group_add_obj(ui_group_panel, ui_pnlApp);
-
-                apply_size_to_content(&theme, ui_pnlContent, ui_lblAppItem, ui_lblAppItemGlyph, items[i].display_name);
-                apply_text_long_dot(&theme, ui_pnlContent, ui_lblAppItem);
-
-                ui_count++;
             }
+
+            lv_obj_t *ui_lblAppItemGlyph = lv_img_create(ui_pnlApp);
+            if (ui_lblAppItemGlyph) {
+                apply_theme_list_glyph(&theme, ui_lblAppItemGlyph, mux_module, items[i].glyph_icon);
+                if (lv_img_get_src(ui_lblAppItemGlyph) == NULL) apply_app_glyph(items[i].extra_data, items[i].glyph_icon, ui_lblAppItemGlyph);
+                lv_group_add_obj(ui_group_glyph, ui_lblAppItemGlyph);
+            }
+
+            lv_group_add_obj(ui_group_panel, ui_pnlApp);
+
+            apply_size_to_content(&theme, ui_pnlContent, ui_lblAppItem, ui_lblAppItemGlyph, items[i].display_name);
+            apply_text_long_dot(&theme, ui_pnlContent, ui_lblAppItem);
+
+            ui_count++;
         }
     }
 
-    if (ui_count > 0) {
-        theme.GRID.ENABLED ? lv_obj_update_layout(ui_pnlGrid) : lv_obj_update_layout(ui_pnlContent);
-    }
+    if (ui_count > 0) theme.GRID.ENABLED ? lv_obj_update_layout(ui_pnlGrid) : lv_obj_update_layout(ui_pnlContent);
 }
 
 static void check_focus(void) {
