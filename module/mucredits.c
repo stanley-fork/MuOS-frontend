@@ -63,7 +63,8 @@
 #define COL_CON_G 201
 #define COL_CON_B 124
 
-#define BG_DARKEN_ALPHA 0
+#define BG_DARKEN_ALPHA  0
+#define TXT_SHADOW_ALPHA 160
 
 static const char *commanders[] = {
         "xonglebongle", "antikk", "corey", "bitter_bizarro",
@@ -520,10 +521,113 @@ static void render_backgrounds(float dt) {
     SDL_RenderFillRect(g_renderer, &full);
 }
 
-static SDL_Texture *render_text(TTF_Font *font, const char *text, SDL_Color col, int *out_w, int *out_h) {
+static int text_shadow_offset(void) {
+    int v = sx(1);
+    return v < 1 ? 1 : v;
+}
+
+static SDL_Surface *render_text_surface(TTF_Font *font, const char *text, SDL_Color col) {
+    if (!text || !*text) return NULL;
+
+    int offset = text_shadow_offset();
+
+    SDL_Color shadow_col = {0, 0, 0, 255};
+
+    SDL_Surface *shadow = TTF_RenderUTF8_Blended(font, text, shadow_col);
+    if (!shadow) return NULL;
+
+    SDL_Surface *front = TTF_RenderUTF8_Blended(font, text, col);
+    if (!front) {
+        SDL_FreeSurface(shadow);
+        return NULL;
+    }
+
+    SDL_Surface *out = SDL_CreateRGBSurfaceWithFormat(0, front->w + offset, front->h + offset, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!out) {
+        SDL_FreeSurface(front);
+        SDL_FreeSurface(shadow);
+        return NULL;
+    }
+
+    SDL_FillRect(out, NULL, SDL_MapRGBA(out->format, 0, 0, 0, 0));
+
+    SDL_Rect dst;
+    dst.x = offset;
+    dst.y = offset;
+    dst.w = shadow->w;
+    dst.h = shadow->h;
+
+    SDL_SetSurfaceBlendMode(shadow, SDL_BLENDMODE_BLEND);
+    SDL_SetSurfaceAlphaMod(shadow, TXT_SHADOW_ALPHA);
+    SDL_BlitSurface(shadow, NULL, out, &dst);
+
+    dst.x = 0;
+    dst.y = 0;
+    dst.w = front->w;
+    dst.h = front->h;
+
+    SDL_SetSurfaceBlendMode(front, SDL_BLENDMODE_BLEND);
+    SDL_BlitSurface(front, NULL, out, &dst);
+
+    SDL_FreeSurface(front);
+    SDL_FreeSurface(shadow);
+
+    return out;
+}
+
+static SDL_Surface *render_text_wrapped_surface(TTF_Font *font, const char *text, SDL_Color col, int wrap_w) {
     if (!*text) return NULL;
 
-    SDL_Surface *surf = TTF_RenderUTF8_Blended(font, text, col);
+    int offset = text_shadow_offset();
+
+    SDL_Color shadow_col = {0, 0, 0, 255};
+
+    TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
+
+    SDL_Surface *shadow = TTF_RenderUTF8_Blended_Wrapped(font, text, shadow_col, wrap_w);
+    if (!shadow) return NULL;
+
+    SDL_Surface *front = TTF_RenderUTF8_Blended_Wrapped(font, text, col, wrap_w);
+    if (!front) {
+        SDL_FreeSurface(shadow);
+        return NULL;
+    }
+
+    SDL_Surface *out = SDL_CreateRGBSurfaceWithFormat(0, front->w + offset, front->h + offset, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!out) {
+        SDL_FreeSurface(front);
+        SDL_FreeSurface(shadow);
+        return NULL;
+    }
+
+    SDL_FillRect(out, NULL, SDL_MapRGBA(out->format, 0, 0, 0, 0));
+
+    SDL_Rect dst;
+    dst.x = offset;
+    dst.y = offset;
+    dst.w = shadow->w;
+    dst.h = shadow->h;
+
+    SDL_SetSurfaceBlendMode(shadow, SDL_BLENDMODE_BLEND);
+    SDL_SetSurfaceAlphaMod(shadow, TXT_SHADOW_ALPHA);
+    SDL_BlitSurface(shadow, NULL, out, &dst);
+
+    dst.x = 0;
+    dst.y = 0;
+    dst.w = front->w;
+    dst.h = front->h;
+
+    SDL_SetSurfaceBlendMode(front, SDL_BLENDMODE_BLEND);
+    SDL_BlitSurface(front, NULL, out, &dst);
+
+    SDL_FreeSurface(front);
+    SDL_FreeSurface(shadow);
+
+    return out;
+}
+
+static SDL_Texture *render_text(TTF_Font *font, const char *text, SDL_Color col, int *out_w, int *out_h) {
+    SDL_Surface *surf = render_text_surface(font, text, col);
     if (!surf) return NULL;
 
     SDL_Texture *t = SDL_CreateTextureFromSurface(g_renderer, surf);
@@ -531,18 +635,18 @@ static SDL_Texture *render_text(TTF_Font *font, const char *text, SDL_Color col,
     *out_h = surf->h;
 
     SDL_FreeSurface(surf);
+
     return t;
 }
 
 static SDL_Texture *render_text_wrapped(TTF_Font *font, const char *text, SDL_Color col, int wrap_w, int *out_w, int *out_h) {
-    TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
-    SDL_Surface *surf = TTF_RenderUTF8_Blended_Wrapped(font, text, col, wrap_w);
-
+    SDL_Surface *surf = render_text_wrapped_surface(font, text, col, wrap_w);
     if (!surf) return NULL;
-    SDL_Texture *t = SDL_CreateTextureFromSurface(g_renderer, surf);
 
+    SDL_Texture *t = SDL_CreateTextureFromSurface(g_renderer, surf);
     *out_w = surf->w;
     *out_h = surf->h;
+
     SDL_FreeSurface(surf);
 
     return t;
@@ -739,7 +843,7 @@ static void add_names(const char **names, SDL_Color col, const char *bg_key, int
     if (avail < 1) goto cleanup;
 
     int gutter = sx(28);
-    int line_h = TTF_FontHeight(g_font_sml) + sx(4);
+    int line_h = TTF_FontHeight(g_font_sml) + sx(4) + text_shadow_offset();
     if (line_h < 1) line_h = 1;
 
     int cols;
@@ -801,7 +905,7 @@ static void add_names(const char **names, SDL_Color col, const char *bg_key, int
             if (reg_idx >= reg_n) break;
 
             int idx = regular[reg_idx];
-            SDL_Surface *ns = TTF_RenderUTF8_Blended(g_font_sml, names[idx], col);
+            SDL_Surface *ns = render_text_surface(g_font_sml, names[idx], col);
             if (!ns) continue;
 
             SDL_Rect dst;
@@ -833,7 +937,7 @@ static void add_names(const char **names, SDL_Color col, const char *bg_key, int
 
         SDL_FillRect(row_surf, NULL, SDL_MapRGBA(row_surf->format, 0, 0, 0, 0));
 
-        SDL_Surface *ns = TTF_RenderUTF8_Blended(g_font_sml, names[idx], col);
+        SDL_Surface *ns = render_text_surface(g_font_sml, names[idx], col);
         if (ns) {
             SDL_Rect dst;
 
