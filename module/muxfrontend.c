@@ -4,7 +4,6 @@
 #include "muxshare.h"
 #include "../common/battery.h"
 #include "../common/inotify.h"
-#include "../common/display.h"
 
 #define DISPATCH_SLOTS 64
 #define DISPATCH_MASK  (DISPATCH_SLOTS - 1)

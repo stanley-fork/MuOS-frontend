@@ -74,6 +74,7 @@ static void handle_a(void) {
     typedef enum {
         MENU_GENERAL = 0,
         MENU_NEWS,
+        MENU_CREDITS,
     } menu_action;
 
     typedef int (*visible_fn)(void);
@@ -93,7 +94,7 @@ static void handle_a(void) {
             {"sysinfo",    MENU_GENERAL, NULL},
             {"netinfo",    MENU_GENERAL, visible_network_opt},
             {"chrony",     MENU_GENERAL, visible_chrony_opt},
-            {"credits",    MENU_GENERAL, NULL},
+            {"credits",    MENU_CREDITS, NULL},
     };
 
     const menu_entry *visible_entries[UI_COUNT];
@@ -125,6 +126,14 @@ static void handle_a(void) {
                 toast_message(lang.GENERIC.NEED_CONNECT, MEDIUM);
                 return;
             }
+            break;
+        case MENU_CREDITS:
+            play_sound(SND_CONFIRM);
+
+            fade_out_screen();
+            load_mux(entry->mux_name);
+
+            mux_input_stop();
             break;
         default:
             return;

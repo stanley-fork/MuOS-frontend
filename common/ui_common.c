@@ -315,9 +315,15 @@ void apply_gradient_to_ui_screen(lv_obj_t *ui_screen, struct theme_config *theme
 
 void fade_reset(void) {
     fade_in_done = 0;
+
+    if (ui_black && !lv_obj_is_valid(ui_black)) {
+        ui_black = NULL;
+    }
 }
 
 static void gen_black(int opacity) {
+    if (!ui_screen_container || !lv_obj_is_valid(ui_screen_container)) return;
+
     ui_black = lv_obj_create(ui_screen_container);
 
     lv_obj_set_size(ui_black, device.MUX.WIDTH, device.MUX.HEIGHT);
@@ -332,7 +338,11 @@ static void gen_black(int opacity) {
 }
 
 static void fade_step(int start, int end, int keep) {
+    if (!ui_black || !lv_obj_is_valid(ui_black)) return;
+
     for (int i = 0; i <= FADE_STEP; i++) {
+        if (!ui_black || !lv_obj_is_valid(ui_black)) return;
+
         lv_opa_t opa = (lv_opa_t) (start + ((end - start) * i) / FADE_STEP);
         lv_obj_set_style_bg_opa(ui_black, opa, MU_OBJ_MAIN_DEFAULT);
 
@@ -342,14 +352,18 @@ static void fade_step(int start, int end, int keep) {
         usleep((FADE_TIME * 1000) / FADE_STEP);
     }
 
-    if (!keep) {
+    if (!keep && ui_black && lv_obj_is_valid(ui_black)) {
         lv_obj_del(ui_black);
         ui_black = NULL;
     }
 }
 
 void fade_in_screen(void) {
-    if (!config.VISUAL.BLACKFADE || !ui_black || !lv_obj_is_valid(ui_black) || fade_in_done) return;
+    if (!config.VISUAL.BLACKFADE || fade_in_done) return;
+    if (!ui_black || !lv_obj_is_valid(ui_black)) {
+        ui_black = NULL;
+        return;
+    }
 
     fade_in_done = 1;
 
@@ -363,8 +377,16 @@ void fade_out_screen(void) {
     unload_image_animation();
 
     if (!config.VISUAL.BLACKFADE) return;
+    if (!ui_screen_container || !lv_obj_is_valid(ui_screen_container)) return;
+
+    if (ui_black && lv_obj_is_valid(ui_black)) {
+        lv_obj_del(ui_black);
+        ui_black = NULL;
+    }
 
     gen_black(LV_OPA_TRANSP);
+
+    if (!ui_black || !lv_obj_is_valid(ui_black)) return;
 
     lv_obj_move_foreground(ui_black);
     lv_refr_now(NULL);
