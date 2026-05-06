@@ -25,7 +25,8 @@
 #define SCROLL_PX_PER_S 38.0f
 #define MUSIC_FADE_IN_S 2.0f
 
-#define BG_FADE_S 2.5f
+#define QUIT_FADE_S 0.6f
+#define BG_FADE_S   2.5f
 
 #define KB_ZOOM 0.18f
 #define KB_PAN  0.06f
@@ -62,7 +63,7 @@
 #define COL_CON_G 201
 #define COL_CON_B 124
 
-#define BG_DARKEN_ALPHA  0
+#define BG_DARKEN_ALPHA 0
 
 static const char *commanders[] = {
         "xonglebongle", "antikk", "corey", "bitter_bizarro",
@@ -155,7 +156,7 @@ static const char *contributors[] = {
 #define SONG_TITLE   "Supporter Music"
 #define SONG_TRACK   "Embers"
 #define SONG_ARTIST  "???"
-#define SONG_REBOOT  "Your device will now reboot..."
+#define SONG_REBOOT  "Press any button to reboot..."
 #define SONG_BLESSED "Have a blessed day..."
 
 typedef enum {
@@ -223,13 +224,15 @@ static int g_bg_count = 0;
 static bg_image_t *g_bg_current = NULL;
 static bg_image_t *g_bg_previous = NULL;
 static float g_bg_fade = 1.0f;
-static float g_bg_KB_t = 0.0f;
-static float g_bg_KB_dir = 1.0f;
+static float g_bg_kb_t = 0.0f;
+static float g_bg_kb_dir = 1.0f;
 static const char *g_bg_active_key = "";
 
 static bool g_running = true;
 static bool g_first_pass_done = false;
 static bool g_skip_requested = false;
+static bool g_quit_requested = false;
+static float g_quit_fade = 0.0f;
 
 static int sx(int v) {
     return (int) lroundf((float) v * g_scale);
@@ -412,17 +415,18 @@ static void bg_set_active(const char *key) {
     if (key == g_bg_active_key) return;
     if (g_bg_active_key && key && strcmp(g_bg_active_key, key) == 0) return;
 
-    g_bg_prev_kb_frozen = g_bg_KB_t;
-    g_bg_prev_dir = g_bg_KB_dir;
+    g_bg_prev_kb_frozen = g_bg_kb_t;
+    g_bg_prev_dir = g_bg_kb_dir;
     g_bg_previous = g_bg_current;
 
     g_bg_current = bg_lookup_or_load(key);
     g_bg_active_key = key ? key : "";
     g_bg_fade = 0.0f;
 
-    g_bg_KB_t = 0.0f;
-    g_bg_KB_dir = -g_bg_KB_dir;
-    if (g_bg_KB_dir == 0.0f) g_bg_KB_dir = 1.0f;
+    g_bg_kb_t = 0.0f;
+    g_bg_kb_dir = -g_bg_kb_dir;
+
+    if (g_bg_kb_dir == 0.0f) g_bg_kb_dir = 1.0f;
 }
 
 static float smoothstep01(float t) {
@@ -498,8 +502,8 @@ static void render_backgrounds(float dt) {
         if (g_bg_fade > 1.0f) g_bg_fade = 1.0f;
     }
 
-    g_bg_KB_t += dt / 45.0f;
-    if (g_bg_KB_t > 1.0f) g_bg_KB_t = 1.0f;
+    g_bg_kb_t += dt / 45.0f;
+    if (g_bg_kb_t > 1.0f) g_bg_kb_t = 1.0f;
 
     if (g_bg_previous && g_bg_fade < 1.0f) {
         float eased_out = smoothstep01(g_bg_fade);
@@ -507,7 +511,7 @@ static void render_backgrounds(float dt) {
     }
     if (g_bg_current) {
         float eased_in = smoothstep01(g_bg_fade);
-        bg_render_one(g_bg_current, g_bg_KB_t, g_bg_KB_dir, (Uint8) (eased_in * 255));
+        bg_render_one(g_bg_current, g_bg_kb_t, g_bg_kb_dir, (Uint8) (eased_in * 255));
     }
 
     SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_BLEND);
@@ -559,18 +563,14 @@ static block_t *new_block(block_kind_t kind, const char *bg_key) {
     return b;
 }
 
-static void block_set_lines(block_t *b, SDL_Texture **texs, int *ws, int *hs, int n) {
+static void block_set_line(block_t *b, SDL_Texture **texs, int *ws, int *hs) {
     b->lines = texs;
 
     b->line_w = ws;
     b->line_h = hs;
 
-    b->line_count = n;
-
-    int total = 0;
-    for (int i = 0; i < n; ++i) total += hs[i];
-
-    b->height = total;
+    b->line_count = 1;
+    b->height = hs[0];
 }
 
 static void block_free_lines(block_t *b) {
@@ -678,7 +678,7 @@ static void add_title(TTF_Font *font, const char *text, SDL_Color col, const cha
     ah[0] = h;
 
     block_t *b = new_block(font == g_font_huge ? BLK_TITLE_BIG : BLK_TITLE_MED, bg_key);
-    block_set_lines(b, arr, aw, ah, 1);
+    block_set_line(b, arr, aw, ah);
 }
 
 static block_t *add_paragraph(const char *text, SDL_Color col, const char *bg_key) {
@@ -705,7 +705,7 @@ static block_t *add_paragraph(const char *text, SDL_Color col, const char *bg_ke
     ah[0] = h;
 
     block_t *b = new_block(BLK_PARAGRAPH, bg_key);
-    block_set_lines(b, arr, aw, ah, 1);
+    block_set_line(b, arr, aw, ah);
 
     return b;
 }
@@ -957,7 +957,7 @@ static bool replace_quote_block(block_t *b, const char *quote) {
     ah[0] = h;
 
     block_free_lines(b);
-    block_set_lines(b, arr, aw, ah, 2);
+    block_set_line(b, arr, aw, ah);
 
     return true;
 }
@@ -1185,9 +1185,40 @@ static void try_start_music(void) {
     }
 }
 
-static void quit_credits(void) {
-    if (!config.BOOT.FACTORY_RESET) write_text_to_file(MUOS_PDI_LOAD, "w", CHAR, "credit");
+static void finish_credits(void) {
+    if (!config.BOOT.FACTORY_RESET) {
+        write_text_to_file(MUOS_PDI_LOAD, "w", CHAR, "credit");
+        write_text_to_file(MUOS_ACT_LOAD, "w", CHAR, "info");
+    }
+
     g_running = false;
+}
+
+static void quit_credits(void) {
+    if (g_quit_requested) return;
+
+    g_quit_requested = true;
+    g_quit_fade = 0.0f;
+
+    if (g_music && Mix_PlayingMusic()) Mix_FadeOutMusic((int) (QUIT_FADE_S * 1000.0f));
+}
+
+static void render_quit_fade(float dt) {
+    if (!g_quit_requested) return;
+
+    g_quit_fade += dt / QUIT_FADE_S;
+    if (g_quit_fade > 1.0f) g_quit_fade = 1.0f;
+
+    float eased = smoothstep01(g_quit_fade);
+    Uint8 alpha = (Uint8) lroundf(eased * 255.0f);
+
+    SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, alpha);
+
+    SDL_Rect full = {0, 0, g_screen_w, g_screen_h};
+    SDL_RenderFillRect(g_renderer, &full);
+
+    if (g_quit_fade >= 1.0f) finish_credits();
 }
 
 static void handle_event(SDL_Event *ev) {
@@ -1197,8 +1228,7 @@ static void handle_event(SDL_Event *ev) {
         return;
     }
 
-    if (ev->type == SDL_KEYDOWN || ev->type == SDL_JOYBUTTONDOWN ||
-        ev->type == SDL_CONTROLLERBUTTONDOWN) {
+    if (ev->type == SDL_KEYDOWN || ev->type == SDL_JOYBUTTONDOWN || ev->type == SDL_CONTROLLERBUTTONDOWN) {
         if (config.BOOT.FACTORY_RESET) return;
         g_skip_requested = true;
     }
@@ -1276,48 +1306,46 @@ static void main_loop(void) {
 
         float scroll_speed = SCROLL_PX_PER_S * g_scale;
 
-        if (intro_hold > 0.0f) {
-            intro_hold -= dt;
-        } else if (config.BOOT.FACTORY_RESET) {
-            float stop_y = (float) g_last_content_y_centre - ((float) g_screen_h * 0.5f);
-            if (stop_y < 0.0f) stop_y = 0.0f;
+        if (!g_quit_requested) {
+            if (intro_hold > 0.0f) {
+                intro_hold -= dt;
+            } else if (config.BOOT.FACTORY_RESET) {
+                float stop_y = (float) g_last_content_y_centre - ((float) g_screen_h * 0.5f);
+                if (stop_y < 0.0f) stop_y = 0.0f;
 
-            if (!at_end) {
-                g_scroll_y += scroll_speed * dt;
-                if (g_scroll_y >= stop_y) {
-                    g_scroll_y = stop_y;
-                    at_end = true;
-                    outro_hold = OUTRO_HOLD_S;
-                    if (g_music && Mix_PlayingMusic()) Mix_FadeOutMusic((int) (OUTRO_HOLD_S * 1000.0f));
+                if (!at_end) {
+                    g_scroll_y += scroll_speed * dt;
+                    if (g_scroll_y >= stop_y) {
+                        g_scroll_y = stop_y;
+                        at_end = true;
+                        outro_hold = OUTRO_HOLD_S;
+                        if (g_music && Mix_PlayingMusic()) Mix_FadeOutMusic((int) (OUTRO_HOLD_S * 1000.0f));
+                    }
+                } else {
+                    outro_hold -= dt;
+                    if (outro_hold <= 0.0f) {
+                        g_first_pass_done = true;
+                        quit_credits();
+                    }
                 }
             } else {
-                outro_hold -= dt;
-                if (outro_hold <= 0.0f) {
+                g_scroll_y += scroll_speed * dt;
+                if (g_scroll_y >= (float) g_reel_height) {
+                    float previous_reel_height = (float) g_reel_height;
+
+                    g_scroll_y -= previous_reel_height;
                     g_first_pass_done = true;
-                    quit_credits();
-                    break;
+
+                    refresh_quote_block();
                 }
             }
-        } else {
-            g_scroll_y += scroll_speed * dt;
-            if (g_scroll_y >= (float) g_reel_height) {
-                float previous_reel_height = (float) g_reel_height;
 
-                g_scroll_y -= previous_reel_height;
-                g_first_pass_done = true;
-
-                refresh_quote_block();
-            }
-        }
-
-        if (g_skip_requested && !config.BOOT.FACTORY_RESET) {
-            if (g_music && Mix_PlayingMusic()) Mix_FadeOutMusic(400);
-            quit_credits();
-            break;
+            if (g_skip_requested && !config.BOOT.FACTORY_RESET) quit_credits();
         }
 
         render_backgrounds(dt);
         render_reel();
+        render_quit_fade(dt);
         SDL_RenderPresent(g_renderer);
     }
 }
