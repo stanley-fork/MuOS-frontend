@@ -13,11 +13,11 @@ This is where all the magic of the user interface of MustardOS (muOS) comes to l
 
 ### Independent
 
+* `mucredits`: Supporter Credits
 * `mufbset`: Customised framebuffer resolution switcher
 * `muhotkey`: Global Hotkey System
 * `mulookup`: Content Name Lookup
 * `muxcharge`: Charging Information Screen
-* `muxcredits`: Supporter Credits Screen
 * `muxfrontend`: Main Frontend Specific Runner
 * `muxmessage`: Information and Progress Screen
 * `muxwarn`: First Install Disclaimer Message

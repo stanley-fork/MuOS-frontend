@@ -113,8 +113,7 @@ static lv_font_t *load_font_cached(const char *path) {
 void load_font_text(lv_obj_t *screen) {
     lv_font_t * language_font = get_language_font();
 
-    // Always load the default font for the supporter credits module!
-    if (strcasecmp(get_process_name(), "muxcredits") != 0 && config.SETTINGS.ADVANCED.FONT) {
+    if (config.SETTINGS.ADVANCED.FONT) {
         char theme_font_text[MAX_BUFFER_SIZE];
 
         const char *curr_lang = config.SETTINGS.GENERAL.LANGUAGE;

@@ -1143,7 +1143,7 @@ void ui_common_handle_volume_down(void) {
 }
 
 void ui_common_handle_idle(void) {
-    if (strcmp(mux_module, "muxcredits") == 0 || strcmp(mux_module, "muxcharge") == 0) {
+    if (strcmp(mux_module, "mucredits") == 0 || strcmp(mux_module, "muxcharge") == 0) {
         lv_task_handler();
         return;
     }
